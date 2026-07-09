@@ -1,7 +1,7 @@
 'use strict';
 
 const raffleRepositoryDefault = require('../repositories/raffle.repository');
-const { NotFoundError } = require('../errors/AppError');
+const { NotFoundError, BusinessRuleError } = require('../errors/AppError');
 const { toRaffleResponse } = require('./raffle.presenter');
 
 /**
@@ -15,6 +15,35 @@ const { toRaffleResponse } = require('./raffle.presenter');
  * @param {{ raffleRepository?: typeof raffleRepositoryDefault }} deps
  */
 function createRaffleService({ raffleRepository = raffleRepositoryDefault } = {}) {
+  /**
+   * Cria uma nova rifa aplicando as regras de negócio.
+   *
+   * A validação de *formato* (tipos, presença) é feita na borda (Zod);
+   * aqui garantimos os *invariantes de domínio* que não são meramente
+   * sintáticos: preço positivo e quantidade mínima de números. Assim o
+   * caso de uso é seguro mesmo se chamado por outro cliente que não a API.
+   */
+  async function createRaffle({ title, description, unitPrice, totalNumbers, drawDate }) {
+    if (unitPrice <= 0) {
+      throw new BusinessRuleError('O valor por número deve ser maior que zero.', 'INVALID_UNIT_PRICE');
+    }
+    if (!Number.isInteger(totalNumbers) || totalNumbers < 2) {
+      throw new BusinessRuleError('A rifa deve ter ao menos 2 números.', 'INVALID_TOTAL_NUMBERS');
+    }
+    if (drawDate && new Date(drawDate) <= new Date()) {
+      throw new BusinessRuleError('A data do sorteio deve ser futura.', 'INVALID_DRAW_DATE');
+    }
+
+    const created = await raffleRepository.create({
+      title,
+      description,
+      unitPrice,
+      totalNumbers,
+      drawDate,
+    });
+    return toRaffleResponse(created);
+  }
+
   async function listRaffles({ status, page, limit }) {
     const offset = (page - 1) * limit;
     const [items, total] = await Promise.all([
@@ -41,7 +70,7 @@ function createRaffleService({ raffleRepository = raffleRepositoryDefault } = {}
     return toRaffleResponse(raffle);
   }
 
-  return { listRaffles, getRaffleById };
+  return { createRaffle, listRaffles, getRaffleById };
 }
 
 module.exports = { createRaffleService };

@@ -47,6 +47,22 @@ async function findAll({ status, limit, offset }, client) {
   return rows;
 }
 
+async function create({ title, description, unitPrice, totalNumbers, drawDate }, client) {
+  const sql = `
+    INSERT INTO raffles (title, description, unit_price, total_numbers, draw_date)
+    VALUES ($1, $2, $3, $4, $5)
+    RETURNING ${RAFFLE_COLUMNS}
+  `;
+  const { rows } = await runner(client).query(sql, [
+    title,
+    description ?? '',
+    unitPrice,
+    totalNumbers,
+    drawDate ?? null,
+  ]);
+  return rows[0];
+}
+
 async function findById(id, client) {
   const sql = `SELECT ${RAFFLE_COLUMNS} FROM raffles WHERE id = $1`;
   const { rows } = await runner(client).query(sql, [id]);
@@ -102,6 +118,7 @@ async function count({ status }, client) {
 }
 
 module.exports = {
+  create,
   findAll,
   findById,
   findByIdForUpdate,

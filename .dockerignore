@@ -1,0 +1,26 @@
+# Contexto de build enxuto: acelera o `docker build` e evita vazar
+# arquivos locais para dentro da imagem.
+node_modules
+npm-debug.log*
+coverage
+tests
+
+# Ambiente e segredos — NUNCA entram na imagem.
+.env
+.env.*
+!.env.example
+
+# Git e metadados de projeto
+.git
+.gitignore
+
+# Documentação e artefatos que não afetam o runtime
+*.md
+.claude
+.vscode
+.idea
+
+# Artefatos Docker (evita recursão do próprio contexto)
+Dockerfile
+.dockerignore
+docker-compose*.yml

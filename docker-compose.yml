@@ -1,0 +1,75 @@
+# =============================================================================
+#  Rifinha Digital — orquestração local (API + PostgreSQL)
+# -----------------------------------------------------------------------------
+#  `docker compose up` sobe o banco, espera ele ficar SAUDÁVEL, aplica as
+#  migrações e então inicia a API. Tudo isolado em uma rede própria.
+#
+#  Obs.: a chave `version:` foi omitida de propósito — é obsoleta no Compose v2
+#  (Compose Specification) e emite warning se presente.
+# =============================================================================
+
+services:
+  # ---- Banco de dados ------------------------------------------------------
+  db:
+    image: postgres:16-alpine # Postgres LTS, imagem enxuta (Alpine).
+    container_name: rifinha-db
+    restart: unless-stopped
+    environment:
+      # Credenciais do Postgres. Vêm do .env (com defaults para dev).
+      POSTGRES_USER: ${PGUSER:-postgres}
+      POSTGRES_PASSWORD: ${PGPASSWORD:-postgres}
+      POSTGRES_DB: ${PGDATABASE:-rifinha}
+    volumes:
+      # Persistência dos dados: sobrevive a `down`/recriação do container.
+      - pgdata:/var/lib/postgresql/data
+    # NÃO expomos a porta 5432 ao host por padrão (segurança): apenas a API,
+    # na mesma rede, acessa o banco. Para depurar com um client externo,
+    # descomente o bloco abaixo.
+    # ports:
+    #   - "5432:5432"
+    healthcheck:
+      # pg_isready confirma que o Postgres aceita conexões antes de a API subir.
+      test: ["CMD-SHELL", "pg_isready -U ${PGUSER:-postgres} -d ${PGDATABASE:-rifinha}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - rifinha-net
+
+  # ---- API -----------------------------------------------------------------
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rifinha-api
+    restart: unless-stopped
+    # Só inicia depois que o banco estiver SAUDÁVEL (não apenas "iniciado").
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: ${PORT:-3000}
+      # Dentro da rede do Compose, o host do banco é o NOME do serviço: "db".
+      DATABASE_URL: postgres://${PGUSER:-postgres}:${PGPASSWORD:-postgres}@db:5432/${PGDATABASE:-rifinha}
+    ports:
+      # Expõe a API ao host. Formato "host:container".
+      - "${PORT:-3000}:3000"
+    # Aplica as migrações (idempotentes) e sobe o servidor. O ENTRYPOINT
+    # (dumb-init) da imagem continua ativo, garantindo o tratamento de sinais.
+    command: sh -c "npm run migrate && node src/server.js"
+    # init: true daria um init do próprio Docker; já usamos dumb-init na imagem.
+    networks:
+      - rifinha-net
+
+# ---- Volumes ---------------------------------------------------------------
+volumes:
+  pgdata:
+    driver: local # Volume nomeado e gerenciado pelo Docker (dados do Postgres).
+
+# ---- Rede ------------------------------------------------------------------
+networks:
+  rifinha-net:
+    driver: bridge # Rede bridge dedicada: isola os serviços e habilita o DNS
+                   # interno (a API resolve "db" pelo nome do serviço).
