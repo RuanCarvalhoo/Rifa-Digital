@@ -63,6 +63,22 @@ services:
     networks:
       - rifinha-net
 
+  # ---- Frontend (React + Vite, servido por Nginx) --------------------------
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: rifinha-frontend
+    restart: unless-stopped
+    # Só faz sentido subir depois da API (o Nginx faz proxy de /api para ela).
+    depends_on:
+      - api
+    ports:
+      # Expõe o site ao host. Formato "host:container" (Nginx escuta na 80).
+      - "${FRONTEND_PORT:-8080}:80"
+    networks:
+      - rifinha-net
+
 # ---- Volumes ---------------------------------------------------------------
 volumes:
   pgdata:

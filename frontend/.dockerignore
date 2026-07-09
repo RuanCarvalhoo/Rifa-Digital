@@ -1,0 +1,15 @@
+# Contexto de build enxuto para o frontend.
+node_modules
+dist
+npm-debug.log*
+
+# Ambiente e segredos
+.env
+.env.*
+
+# Artefatos Docker e metadados
+Dockerfile
+.dockerignore
+.git
+.gitignore
+*.md
