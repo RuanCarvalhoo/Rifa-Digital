@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(Remove-Item *)",
+      "PowerShell($b = \"C:\\\\Users\\\\aonok\\\\OneDrive\\\\Área de Trabalho\\\\MouraTech\\\\LLM\\\\projeto\\\\backend\"; try { Remove-Item -Recurse -Force \"$b\\\\node_modules\" -Confirm:$false -ErrorAction Stop; \"node_modules removido\" } catch { \"node_modules: $\\($_.Exception.Message\\)\" }; try { Remove-Item -Recurse -Force $b -Confirm:$false -ErrorAction Stop; \"backend removido\" } catch { \"backend: $\\($_.Exception.Message\\)\" })"
+    ]
+  }
+}
