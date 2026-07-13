@@ -1,8 +1,7 @@
 import { Routes, Route, Link, NavLink } from 'react-router-dom';
 import RafflesPage from './pages/RafflesPage.jsx';
 import RaffleDetailPage from './pages/RaffleDetailPage.jsx';
-import PurchasesPage from './pages/PurchasesPage.jsx';
-import PurchaseDetailPage from './pages/PurchaseDetailPage.jsx';
+import AdminPage from './pages/AdminPage.jsx';
 
 export default function App() {
   return (
@@ -11,7 +10,7 @@ export default function App() {
         <Link to="/" className="brand">🎟️ Rifinha Digital</Link>
         <nav className="nav">
           <NavLink to="/" end>Rifas</NavLink>
-          <NavLink to="/compras">Minhas compras</NavLink>
+          <NavLink to="/admin">Admin</NavLink>
         </nav>
       </header>
 
@@ -19,8 +18,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<RafflesPage />} />
           <Route path="/rifas/:id" element={<RaffleDetailPage />} />
-          <Route path="/compras" element={<PurchasesPage />} />
-          <Route path="/compras/:id" element={<PurchaseDetailPage />} />
+          <Route path="/admin" element={<AdminPage />} />
           <Route path="*" element={<p>Página não encontrada.</p>} />
         </Routes>
       </main>

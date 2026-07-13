@@ -25,17 +25,20 @@ function createPurchaseService({
   withTransaction = db.withTransaction,
 } = {}) {
   /**
-   * Efetua a compra de números de uma rifa.
+   * Efetua a compra de uma QUANTIDADE de números de uma rifa. O comprador
+   * não escolhe os números: eles são sorteados aleatoriamente entre os
+   * disponíveis, garantindo que cada número pertença a uma única pessoa e
+   * que nunca haja repetição.
    *
    * Fluxo dentro da transação:
    *  1. Trava a rifa (SELECT ... FOR UPDATE) para serializar concorrência.
    *  2. Verifica existência e se está DISPONIVEL (e não expirada).
-   *  3. Valida faixa e disponibilidade dos números pedidos.
-   *  4. Verifica números já vendidos (mensagem amigável).
-   *  5. Cria a compra, insere os tickets (UNIQUE garante no banco).
+   *  3. Valida que a quantidade pedida não excede a disponível.
+   *  4. Sorteia `quantity` números ainda disponíveis (sem repetição).
+   *  5. Cria a compra e insere os tickets (UNIQUE garante no banco).
    *  6. Atualiza vendidos e encerra a rifa se esgotou.
    */
-  async function purchaseNumbers({ raffleId, buyerName, buyerEmail, numbers }) {
+  async function purchaseNumbers({ raffleId, buyerName, buyerEmail, quantity }) {
     return withTransaction(async (client) => {
       const raffle = await raffleRepository.findByIdForUpdate(raffleId, client);
       if (!raffle) {
@@ -52,45 +55,47 @@ function createPurchaseService({
         );
       }
 
-      // Regra: números devem estar dentro da faixa válida [1, totalNumbers].
-      const outOfRange = numbers.filter((n) => n < 1 || n > totalNumbers);
-      if (outOfRange.length > 0) {
-        throw new BusinessRuleError(
-          `Números fora da faixa permitida (1..${totalNumbers}): ${outOfRange.join(', ')}.`,
-          'NUMBERS_OUT_OF_RANGE',
-          { outOfRange }
-        );
-      }
-
-      // Regra: quantidade não pode exceder a disponível.
+      // Regra: não se pode comprar mais do que existe disponível.
+      // Ex.: 30 números disponíveis => impossível comprar 31.
       const available = totalNumbers - Number(raffle.sold_numbers);
-      if (numbers.length > available) {
+      if (quantity > available) {
         throw new BusinessRuleError(
-          `Quantidade solicitada (${numbers.length}) excede a disponível (${available}).`,
+          `Quantidade solicitada (${quantity}) excede a disponível (${available}).`,
           'INSUFFICIENT_AVAILABILITY',
-          { requested: numbers.length, available }
+          { requested: quantity, available }
         );
       }
 
-      // Regra: impedir números já vendidos (checagem prévia amigável).
-      const taken = await ticketRepository.findTakenNumbers(raffleId, numbers, client);
-      if (taken.length > 0) {
+      // Sorteia os números entre os disponíveis. Como a rifa está travada
+      // (FOR UPDATE), o conjunto de disponíveis é consistente e não colide
+      // com compras concorrentes na mesma rifa.
+      const numbers = await ticketRepository.pickRandomAvailable(
+        raffleId,
+        totalNumbers,
+        quantity,
+        client
+      );
+
+      // Salvaguarda: sob condições normais o passo anterior já garante a
+      // quantidade (a checagem de disponibilidade acontece com a rifa
+      // travada). Se ainda assim faltar, aborta sem persistir nada.
+      if (numbers.length < quantity) {
         throw new ConflictError(
-          `Os seguintes números já foram vendidos: ${taken.join(', ')}.`,
-          'NUMBERS_ALREADY_TAKEN',
-          { taken }
+          'Não foi possível reservar todos os números solicitados. Tente novamente.',
+          'ALLOCATION_FAILED',
+          { requested: quantity, allocated: numbers.length }
         );
       }
 
       const unitPrice = Number(raffle.unit_price);
-      const totalAmount = Number((unitPrice * numbers.length).toFixed(2));
+      const totalAmount = Number((unitPrice * quantity).toFixed(2));
 
       const purchase = await purchaseRepository.create(
         {
           raffleId,
           buyerName,
           buyerEmail,
-          quantity: numbers.length,
+          quantity,
           totalAmount,
         },
         client
@@ -106,7 +111,7 @@ function createPurchaseService({
         client
       );
 
-      await raffleRepository.incrementSoldAndMaybeClose(raffleId, numbers.length, client);
+      await raffleRepository.incrementSoldAndMaybeClose(raffleId, quantity, client);
 
       const soldNumbers = inserted.map((t) => t.number).sort((a, b) => a - b);
       return toPurchaseResponse(purchase, soldNumbers);

@@ -63,16 +63,23 @@ export const api = {
 
   getRaffle: (id) => request(`/raffles/${id}`),
 
-  createPurchase: (raffleId, { buyerName, buyerEmail, numbers }) =>
-    request(`/raffles/${raffleId}/purchases`, {
+  // --- Admin ---------------------------------------------------------------
+  createRaffle: ({ title, description, unitPrice, totalNumbers, drawDate }) =>
+    request('/raffles', {
       method: 'POST',
-      body: { buyerName, buyerEmail, numbers },
+      body: { title, description, unitPrice, totalNumbers, drawDate },
     }),
 
-  listPurchases: ({ buyerEmail, raffleId, page, limit } = {}) =>
-    request(`/purchases${qs({ buyerEmail, raffleId, page, limit })}`),
+  drawWinner: (raffleId) => request(`/raffles/${raffleId}/draw`, { method: 'POST' }),
 
-  getPurchase: (id) => request(`/purchases/${id}`),
+  // --- Compra (simulada) ---------------------------------------------------
+  // O comprador informa apenas a QUANTIDADE; os números são sorteados no
+  // servidor entre os disponíveis.
+  createPurchase: (raffleId, { buyerName, buyerEmail, quantity }) =>
+    request(`/raffles/${raffleId}/purchases`, {
+      method: 'POST',
+      body: { buyerName, buyerEmail, quantity },
+    }),
 
   health: () => request('/health'),
 };

@@ -22,7 +22,24 @@ function createRaffleController({ raffleService = createRaffleService() } = {}) 
     res.status(200).json({ data: raffle });
   }
 
-  return { list, getById };
+  async function create(req, res) {
+    const { title, description, unitPrice, totalNumbers, drawDate } = req.body;
+    const raffle = await raffleService.createRaffle({
+      title,
+      description,
+      unitPrice,
+      totalNumbers,
+      drawDate,
+    });
+    res.status(201).location(`/api/raffles/${raffle.id}`).json({ data: raffle });
+  }
+
+  async function draw(req, res) {
+    const raffle = await raffleService.drawWinner(req.params.id);
+    res.status(200).json({ data: raffle });
+  }
+
+  return { list, getById, create, draw };
 }
 
 module.exports = { createRaffleController };

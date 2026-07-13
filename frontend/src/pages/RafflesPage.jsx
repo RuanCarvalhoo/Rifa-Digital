@@ -74,7 +74,11 @@ export default function RafflesPage() {
                       <dd>{formatDate(raffle.drawDate)}</dd>
                     </div>
                   </dl>
-                  <Progress sold={raffle.soldNumbers} total={raffle.totalNumbers} />
+                  {raffle.winner ? (
+                    <p className="winner-tag">🏆 Nº {raffle.winner.number} · {raffle.winner.name}</p>
+                  ) : (
+                    <Progress sold={raffle.soldNumbers} total={raffle.totalNumbers} />
+                  )}
                 </Link>
               ))}
             </div>

@@ -21,11 +21,25 @@ CREATE TABLE IF NOT EXISTS raffles (
   draw_date     TIMESTAMPTZ,
   status        VARCHAR(20)   NOT NULL DEFAULT 'DISPONIVEL'
                 CHECK (status IN ('DISPONIVEL', 'ENCERRADA')),
+  -- Dados do ganhador, preenchidos apenas quando o admin realiza o sorteio.
+  -- Denormalizados (número + comprador) para que a consulta da rifa não
+  -- precise de JOINs e o histórico do ganhador fique estável.
+  winner_number INTEGER,
+  winner_name   VARCHAR(120),
+  winner_email  VARCHAR(160),
+  drawn_at      TIMESTAMPTZ,
   created_at    TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
   updated_at    TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
   -- Invariante: nunca vender mais do que existe.
   CONSTRAINT chk_sold_le_total CHECK (sold_numbers <= total_numbers)
 );
+
+-- Colunas do ganhador para bancos criados antes desta versão (o volume do
+-- Postgres persiste entre deploys, então CREATE TABLE IF NOT EXISTS não basta).
+ALTER TABLE raffles ADD COLUMN IF NOT EXISTS winner_number INTEGER;
+ALTER TABLE raffles ADD COLUMN IF NOT EXISTS winner_name   VARCHAR(120);
+ALTER TABLE raffles ADD COLUMN IF NOT EXISTS winner_email  VARCHAR(160);
+ALTER TABLE raffles ADD COLUMN IF NOT EXISTS drawn_at      TIMESTAMPTZ;
 
 CREATE TABLE IF NOT EXISTS purchases (
   id           BIGSERIAL PRIMARY KEY,

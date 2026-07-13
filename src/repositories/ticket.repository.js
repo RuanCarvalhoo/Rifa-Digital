@@ -16,17 +16,28 @@ function runner(client) {
 }
 
 /**
- * Retorna, dentre os números informados, quais já estão vendidos.
- * Usado para dar uma mensagem de erro clara ANTES de tentar inserir.
+ * Sorteia `quantity` números AINDA DISPONÍVEIS da rifa, de forma
+ * aleatória e sem repetição. A seleção é feita no próprio banco:
+ * `generate_series(1..total)` gera todos os números possíveis, excluímos
+ * os que já têm ticket e `ORDER BY random() LIMIT quantity` escolhe.
+ *
+ * Deve ser chamado dentro da transação que trava a rifa (FOR UPDATE), de
+ * modo que o conjunto de disponíveis seja consistente entre compradores
+ * concorrentes. Retorna menos que `quantity` apenas se não houver
+ * disponibilidade suficiente (o service valida isso antes).
  */
-async function findTakenNumbers(raffleId, numbers, client) {
+async function pickRandomAvailable(raffleId, totalNumbers, quantity, client) {
   const sql = `
-    SELECT number
-    FROM tickets
-    WHERE raffle_id = $1 AND number = ANY($2::int[])
+    SELECT n
+    FROM generate_series(1, $1::int) AS n
+    WHERE NOT EXISTS (
+      SELECT 1 FROM tickets t WHERE t.raffle_id = $2 AND t.number = n
+    )
+    ORDER BY random()
+    LIMIT $3::int
   `;
-  const { rows } = await runner(client).query(sql, [raffleId, numbers]);
-  return rows.map((r) => r.number);
+  const { rows } = await runner(client).query(sql, [totalNumbers, raffleId, quantity]);
+  return rows.map((r) => r.n);
 }
 
 /**
@@ -45,6 +56,25 @@ async function insertMany(raffleId, purchaseId, numbers, client) {
   return rows;
 }
 
+/**
+ * Sorteia aleatoriamente UM número já vendido da rifa, trazendo junto os
+ * dados do comprador (via JOIN com a compra). Retorna `null` se nenhum
+ * número foi vendido ainda. O `ORDER BY random() LIMIT 1` do Postgres dá
+ * uma seleção uniforme entre os tickets — suficiente para o sorteio.
+ */
+async function findRandomSoldTicket(raffleId, client) {
+  const sql = `
+    SELECT t.number, p.buyer_name, p.buyer_email
+    FROM tickets t
+    JOIN purchases p ON p.id = t.purchase_id
+    WHERE t.raffle_id = $1
+    ORDER BY random()
+    LIMIT 1
+  `;
+  const { rows } = await runner(client).query(sql, [raffleId]);
+  return rows[0] ?? null;
+}
+
 async function findByPurchaseId(purchaseId, client) {
   const sql = `
     SELECT number
@@ -56,4 +86,9 @@ async function findByPurchaseId(purchaseId, client) {
   return rows.map((r) => r.number);
 }
 
-module.exports = { findTakenNumbers, insertMany, findByPurchaseId };
+module.exports = {
+  pickRandomAvailable,
+  insertMany,
+  findRandomSoldTicket,
+  findByPurchaseId,
+};

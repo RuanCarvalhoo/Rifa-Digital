@@ -1,7 +1,13 @@
 'use strict';
 
+const db = require('../config/database');
 const raffleRepositoryDefault = require('../repositories/raffle.repository');
-const { NotFoundError, BusinessRuleError } = require('../errors/AppError');
+const ticketRepositoryDefault = require('../repositories/ticket.repository');
+const {
+  NotFoundError,
+  BusinessRuleError,
+  ConflictError,
+} = require('../errors/AppError');
 const { toRaffleResponse } = require('./raffle.presenter');
 
 /**
@@ -14,7 +20,11 @@ const { toRaffleResponse } = require('./raffle.presenter');
  *
  * @param {{ raffleRepository?: typeof raffleRepositoryDefault }} deps
  */
-function createRaffleService({ raffleRepository = raffleRepositoryDefault } = {}) {
+function createRaffleService({
+  raffleRepository = raffleRepositoryDefault,
+  ticketRepository = ticketRepositoryDefault,
+  withTransaction = db.withTransaction,
+} = {}) {
   /**
    * Cria uma nova rifa aplicando as regras de negócio.
    *
@@ -70,7 +80,47 @@ function createRaffleService({ raffleRepository = raffleRepositoryDefault } = {}
     return toRaffleResponse(raffle);
   }
 
-  return { createRaffle, listRaffles, getRaffleById };
+  /**
+   * Sorteia um ganhador para a rifa (ação de administrador).
+   *
+   * Operação ATÔMICA para evitar sorteios concorrentes ou duplicados:
+   *  1. Trava a rifa (FOR UPDATE) e confirma que existe.
+   *  2. Impede re-sorteio (uma rifa só tem um ganhador).
+   *  3. Sorteia aleatoriamente um número JÁ VENDIDO — não há sorteio sem
+   *     participantes.
+   *  4. Persiste o ganhador e encerra a rifa.
+   */
+  async function drawWinner(id) {
+    return withTransaction(async (client) => {
+      const raffle = await raffleRepository.findByIdForUpdate(id, client);
+      if (!raffle) {
+        throw new NotFoundError(`Rifa ${id} não encontrada.`, 'RAFFLE_NOT_FOUND');
+      }
+      if (raffle.winner_number != null) {
+        throw new ConflictError(
+          'Esta rifa já teve um ganhador sorteado.',
+          'RAFFLE_ALREADY_DRAWN'
+        );
+      }
+
+      const ticket = await ticketRepository.findRandomSoldTicket(id, client);
+      if (!ticket) {
+        throw new BusinessRuleError(
+          'Não é possível sortear: nenhum número foi vendido nesta rifa.',
+          'NO_TICKETS_SOLD'
+        );
+      }
+
+      const updated = await raffleRepository.setWinner(
+        id,
+        { number: ticket.number, name: ticket.buyer_name, email: ticket.buyer_email },
+        client
+      );
+      return toRaffleResponse(updated);
+    });
+  }
+
+  return { createRaffle, listRaffles, getRaffleById, drawWinner };
 }
 
 module.exports = { createRaffleService };

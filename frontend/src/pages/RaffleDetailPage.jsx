@@ -1,19 +1,18 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useParams, Link } from 'react-router-dom';
 import { api } from '../api/client.js';
 import { Spinner, ErrorState, StatusBadge, money, formatDate } from '../components/ui.jsx';
 
 export default function RaffleDetailPage() {
   const { id } = useParams();
-  const navigate = useNavigate();
 
   const [state, setState] = useState({ loading: true, error: null, raffle: null });
-  const [selected, setSelected] = useState(() => new Set());
-  const [taken, setTaken] = useState(() => new Set()); // números recusados pela API
+  const [quantity, setQuantity] = useState(1);
   const [buyerName, setBuyerName] = useState('');
   const [buyerEmail, setBuyerEmail] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [feedback, setFeedback] = useState(null);
+  const [confirmation, setConfirmation] = useState(null); // compra concluída
 
   function load() {
     setState({ loading: true, error: null, raffle: null });
@@ -27,43 +26,54 @@ export default function RaffleDetailPage() {
 
   const raffle = state.raffle;
   const available = raffle ? raffle.status === 'DISPONIVEL' && raffle.availableNumbers > 0 : false;
+  const maxQty = raffle ? raffle.availableNumbers : 0;
 
   const total = useMemo(
-    () => (selected.size * (Number(raffle?.unitPrice) || 0)),
-    [selected, raffle]
+    () => quantity * (Number(raffle?.unitPrice) || 0),
+    [quantity, raffle]
   );
 
-  function toggle(n) {
-    if (!available) return;
+  // Mantém a quantidade dentro de [1, disponíveis].
+  function setQty(value) {
     setFeedback(null);
-    setSelected((prev) => {
-      const next = new Set(prev);
-      next.has(n) ? next.delete(n) : next.add(n);
-      return next;
-    });
+    const n = Math.floor(Number(value));
+    if (Number.isNaN(n)) return setQuantity(1);
+    setQuantity(Math.min(Math.max(n, 1), Math.max(maxQty, 1)));
   }
 
   async function handleSubmit(e) {
     e.preventDefault();
     setFeedback(null);
-    if (selected.size === 0) {
-      setFeedback({ type: 'error', message: 'Selecione ao menos um número.' });
+    if (quantity < 1) {
+      setFeedback({ type: 'error', message: 'Escolha ao menos um número.' });
+      return;
+    }
+    if (quantity > maxQty) {
+      setFeedback({ type: 'error', message: `Só há ${maxQty} número(s) disponível(is).` });
       return;
     }
     setSubmitting(true);
     try {
-      const numbers = [...selected].sort((a, b) => a - b);
-      const res = await api.createPurchase(raffle.id, { buyerName, buyerEmail, numbers });
-      navigate(`/compras/${res.data.id}`);
+      const res = await api.createPurchase(raffle.id, { buyerName, buyerEmail, quantity });
+      // Compra simulada concluída: mostramos os números SORTEADOS pelo
+      // servidor. Atualizamos a disponibilidade em segundo plano (sem
+      // spinner de página inteira) para não esconder a confirmação.
+      setConfirmation(res.data);
+      api
+        .getRaffle(id)
+        .then((r) => setState((s) => ({ ...s, raffle: r.data })))
+        .catch(() => {});
     } catch (err) {
-      // Se a API devolveu quais números já foram vendidos, destacamos no grid.
-      const conflict = err.details?.taken || err.details?.outOfRange;
-      if (Array.isArray(conflict)) {
-        setTaken((prev) => new Set([...prev, ...conflict]));
-      }
       setFeedback({ type: 'error', message: err.message });
+    } finally {
       setSubmitting(false);
     }
+  }
+
+  function buyAgain() {
+    setConfirmation(null);
+    setFeedback(null);
+    setQuantity(1);
   }
 
   if (state.loading) return <Spinner />;
@@ -82,6 +92,13 @@ export default function RaffleDetailPage() {
         <StatusBadge status={raffle.status} />
       </div>
 
+      {raffle.winner && (
+        <p className="winner-banner">
+          🏆 Ganhador sorteado: número <strong>{raffle.winner.number}</strong> —{' '}
+          {raffle.winner.name}
+        </p>
+      )}
+
       <dl className="stats">
         <div><dt>Valor por número</dt><dd>{money(raffle.unitPrice)}</dd></div>
         <div><dt>Disponíveis</dt><dd>{raffle.availableNumbers} / {raffle.totalNumbers}</dd></div>
@@ -89,90 +106,111 @@ export default function RaffleDetailPage() {
         <div><dt>Sorteio</dt><dd>{formatDate(raffle.drawDate)}</dd></div>
       </dl>
 
-      {!available && (
+      {!available && !raffle.winner && (
         <p className="notice">
           Esta rifa não está disponível para compra no momento.
         </p>
       )}
 
-      <div className="detail__body">
-        <div>
-          <h2>Escolha seus números</h2>
-          <p className="muted small">
-            A disponibilidade final é confirmada no momento da compra. Números em
-            vermelho já foram vendidos.
-          </p>
-          <div className="numbers">
-            {Array.from({ length: raffle.totalNumbers }, (_, i) => i + 1).map((n) => {
-              const isTaken = taken.has(n);
-              const isSel = selected.has(n);
-              return (
-                <button
-                  type="button"
-                  key={n}
-                  className={
-                    'num' + (isSel ? ' num--sel' : '') + (isTaken ? ' num--taken' : '')
-                  }
-                  disabled={!available || isTaken}
-                  onClick={() => toggle(n)}
-                >
-                  {n}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        <aside className="checkout">
-          <h2>Resumo</h2>
-          <p>
-            <strong>{selected.size}</strong> número(s) selecionado(s)
-          </p>
-          {selected.size > 0 && (
+      <div className="buy-panel">
+        {confirmation ? (
+          <div className="checkout confirm-card">
+            <div className="confirm">
+              <span className="confirm__icon">✓</span>
+              <h2>Compra confirmada</h2>
+            </div>
+            <p className="muted small">Compra simulada #{confirmation.id}</p>
+            <p>Seus números sorteados:</p>
             <p className="chips">
-              {[...selected].sort((a, b) => a - b).map((n) => (
-                <span key={n} className="chip">{n}</span>
+              {confirmation.numbers?.map((n) => (
+                <span key={n} className="chip chip--big">{n}</span>
               ))}
             </p>
-          )}
-          <p className="total">Total: <strong>{money(total)}</strong></p>
-
-          <form onSubmit={handleSubmit} className="form">
-            <label>
-              Seu nome
-              <input
-                type="text"
-                value={buyerName}
-                maxLength={120}
-                required
-                onChange={(e) => setBuyerName(e.target.value)}
-                placeholder="Maria Silva"
-              />
-            </label>
-            <label>
-              Seu e-mail
-              <input
-                type="email"
-                value={buyerEmail}
-                required
-                onChange={(e) => setBuyerEmail(e.target.value)}
-                placeholder="maria@email.com"
-              />
-            </label>
-
-            {feedback && (
-              <p className={`form__msg form__msg--${feedback.type}`}>{feedback.message}</p>
-            )}
-
-            <button
-              type="submit"
-              className="btn btn--primary"
-              disabled={!available || submitting}
-            >
-              {submitting ? 'Processando…' : `Comprar (${money(total)})`}
+            <p className="total">Total: <strong>{money(confirmation.totalAmount)}</strong></p>
+            <button className="btn btn--ghost" onClick={buyAgain} disabled={!available}>
+              Comprar mais números
             </button>
-          </form>
-        </aside>
+          </div>
+        ) : (
+          <div className="checkout">
+            <h2>Comprar números</h2>
+            <p className="muted small">
+              Você escolhe apenas a quantidade — os números são sorteados
+              automaticamente entre os {raffle.availableNumbers} disponíveis.
+            </p>
+
+            <form onSubmit={handleSubmit} className="form">
+              <label>
+                Quantidade de números
+                <div className="stepper">
+                  <button
+                    type="button"
+                    className="btn btn--ghost"
+                    disabled={!available || quantity <= 1}
+                    onClick={() => setQty(quantity - 1)}
+                    aria-label="Diminuir"
+                  >
+                    −
+                  </button>
+                  <input
+                    type="number"
+                    min={1}
+                    max={maxQty}
+                    step={1}
+                    value={quantity}
+                    disabled={!available}
+                    onChange={(e) => setQty(e.target.value)}
+                  />
+                  <button
+                    type="button"
+                    className="btn btn--ghost"
+                    disabled={!available || quantity >= maxQty}
+                    onClick={() => setQty(quantity + 1)}
+                    aria-label="Aumentar"
+                  >
+                    +
+                  </button>
+                </div>
+              </label>
+
+              <label>
+                Seu nome
+                <input
+                  type="text"
+                  value={buyerName}
+                  maxLength={120}
+                  required
+                  onChange={(e) => setBuyerName(e.target.value)}
+                  placeholder="Maria Silva"
+                />
+              </label>
+              <label>
+                Seu e-mail
+                <input
+                  type="email"
+                  value={buyerEmail}
+                  required
+                  onChange={(e) => setBuyerEmail(e.target.value)}
+                  placeholder="maria@email.com"
+                />
+              </label>
+
+              <p className="total">Total: <strong>{money(total)}</strong></p>
+
+              {feedback && (
+                <p className={`form__msg form__msg--${feedback.type}`}>{feedback.message}</p>
+              )}
+
+              <button
+                type="submit"
+                className="btn btn--primary"
+                disabled={!available || submitting}
+              >
+                {submitting ? 'Processando…' : `Comprar ${quantity} número(s) (${money(total)})`}
+              </button>
+            </form>
+          </div>
+        )}
       </div>
     </section>
   );

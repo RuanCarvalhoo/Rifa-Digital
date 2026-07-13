@@ -143,8 +143,14 @@ select:focus, input:focus { border-color: var(--primary); }
 .num--taken { background: rgba(239,68,68,.15); color: var(--off); border-color: rgba(239,68,68,.4); cursor: not-allowed; }
 .num:disabled:not(.num--taken) { opacity: .5; cursor: not-allowed; }
 
-.checkout { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; position: sticky; top: 88px; }
+.checkout { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; }
 .total { font-size: 1.1rem; margin: 10px 0 16px; }
+
+/* Painel de compra por quantidade (números sorteados pelo servidor). */
+.buy-panel { max-width: 480px; margin: 18px auto 0; }
+.stepper { display: flex; align-items: center; gap: 8px; }
+.stepper input { width: 90px; text-align: center; font-size: 1.05rem; }
+.stepper .btn { padding: 8px 14px; font-size: 1.15rem; line-height: 1; }
 
 .form { display: flex; flex-direction: column; gap: 12px; }
 .form label { display: flex; flex-direction: column; gap: 6px; font-size: .85rem; color: var(--muted); }
@@ -166,3 +172,48 @@ select:focus, input:focus { border-color: var(--primary); }
 
 .confirm { display: flex; align-items: center; gap: 14px; margin-bottom: 8px; }
 .confirm__icon { width: 40px; height: 40px; border-radius: 50%; background: rgba(34,197,94,.15); color: var(--ok); display: grid; place-items: center; font-size: 1.3rem; font-weight: 700; }
+.confirm-card { display: flex; flex-direction: column; gap: 10px; }
+.confirm-card h2 { margin: 0; }
+
+/* Mensagem de sucesso (reaproveita .form__msg). */
+.form__msg--ok { background: rgba(34,197,94,.12); color: #86efac; }
+
+/* Ganhador */
+.winner-banner {
+  background: rgba(250, 204, 21, .12);
+  border: 1px solid rgba(250, 204, 21, .35);
+  color: #fde68a;
+  padding: 12px 14px;
+  border-radius: 10px;
+  margin: 16px 0 0;
+}
+.winner-tag {
+  margin: 0;
+  font-weight: 700;
+  color: #fde68a;
+  white-space: nowrap;
+}
+
+/* Formulário de administração */
+.admin-form {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-bottom: 10px;
+}
+.admin-form__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 14px;
+}
+.admin-form label { display: flex; flex-direction: column; gap: 6px; font-size: .85rem; color: var(--muted); }
+.admin-form input { width: 100%; }
+.admin-form__wide { grid-column: 1 / -1; }
+.admin-form .btn { align-self: flex-start; }
+
+/* Linha da lista de rifas no admin: título + metadados empilhados. */
+.list__item .list__meta { margin-top: 6px; flex-wrap: wrap; }

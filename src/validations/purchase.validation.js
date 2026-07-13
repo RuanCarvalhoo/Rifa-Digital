@@ -15,15 +15,13 @@ const createPurchaseSchema = {
     // este dado viria do token e não do corpo da requisição.
     buyerName: z.string().trim().min(1, 'buyerName é obrigatório.').max(120),
     buyerEmail: z.string().trim().email('buyerEmail deve ser um e-mail válido.'),
-    // Números desejados. Único, positivos, e ao menos um.
-    numbers: z
-      .array(z.number().int().positive())
-      .nonempty('Informe ao menos um número.')
-      .max(1000, 'Quantidade de números por compra excede o limite.')
-      .refine(
-        (arr) => new Set(arr).size === arr.length,
-        'Não repita números na mesma compra.'
-      ),
+    // O comprador escolhe apenas QUANTOS números quer; a atribuição dos
+    // números em si é feita aleatoriamente pelo servidor entre os disponíveis.
+    quantity: z.coerce
+      .number()
+      .int('quantity deve ser um inteiro.')
+      .positive('Informe ao menos um número.')
+      .max(10000, 'Quantidade por compra excede o limite.'),
   }),
 };
 

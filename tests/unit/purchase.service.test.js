@@ -14,7 +14,7 @@ const { buildRaffleRow, buildPurchaseRow } = require('../helpers/factories');
  *    orquestração/regra sem precisar de transação real.
  */
 describe('PurchaseService.purchaseNumbers', () => {
-  function makeSut({ raffle = buildRaffleRow(), taken = [], repoOverrides = {} } = {}) {
+  function makeSut({ raffle = buildRaffleRow(), picked, repoOverrides = {} } = {}) {
     const fakeClient = { __fake: true };
 
     const raffleRepository = {
@@ -23,7 +23,11 @@ describe('PurchaseService.purchaseNumbers', () => {
       ...repoOverrides.raffleRepository,
     };
     const ticketRepository = {
-      findTakenNumbers: jest.fn(async () => taken),
+      // Sorteio simulado: por padrão devolve [1..quantity] (o real é aleatório);
+      // testes podem forçar um resultado específico via `picked`.
+      pickRandomAvailable: jest.fn(async (_r, _t, quantity) =>
+        picked ?? Array.from({ length: quantity }, (_, i) => i + 1)
+      ),
       insertMany: jest.fn(async (_r, _p, numbers) =>
         numbers.map((n, i) => ({ id: i + 1, number: n }))
       ),
@@ -53,17 +57,27 @@ describe('PurchaseService.purchaseNumbers', () => {
     raffleId: 1,
     buyerName: 'Maria Silva',
     buyerEmail: 'maria@email.com',
-    numbers: [7, 13, 21],
+    quantity: 3,
   };
 
-  // ---- Caminho feliz: compra de números -----------------------------------
-  it('compra os números, calcula o total e persiste dentro da transação', async () => {
-    const { service, purchaseRepository, ticketRepository, withTransaction } = makeSut();
+  // ---- Caminho feliz: compra por quantidade -------------------------------
+  it('sorteia a quantidade pedida, calcula o total e persiste na transação', async () => {
+    const { service, purchaseRepository, ticketRepository, withTransaction } = makeSut({
+      picked: [7, 13, 21],
+    });
 
     const result = await service.purchaseNumbers(input);
 
     // Rodou dentro de uma transação.
     expect(withTransaction).toHaveBeenCalledTimes(1);
+
+    // Sorteou entre os disponíveis: (raffleId, totalNumbers, quantity, client).
+    expect(ticketRepository.pickRandomAvailable).toHaveBeenCalledWith(
+      1,
+      100,
+      3,
+      expect.anything()
+    );
 
     // Total = preço unitário (10.00) * 3 números = 30.00.
     expect(purchaseRepository.create).toHaveBeenCalledWith(
@@ -71,7 +85,7 @@ describe('PurchaseService.purchaseNumbers', () => {
       expect.anything()
     );
 
-    // Inseriu exatamente os números pedidos.
+    // Inseriu exatamente os números sorteados.
     expect(ticketRepository.insertMany).toHaveBeenCalledWith(
       1,
       expect.any(Number),
@@ -126,37 +140,31 @@ describe('PurchaseService.purchaseNumbers', () => {
     });
   });
 
-  // ---- Validação de disponibilidade ---------------------------------------
-  it('rejeita números fora da faixa [1..total] (NUMBERS_OUT_OF_RANGE)', async () => {
-    const { service } = makeSut({ raffle: buildRaffleRow({ total_numbers: 10 }) });
-
-    await expect(
-      service.purchaseNumbers({ ...input, numbers: [5, 11] })
-    ).rejects.toMatchObject({ code: 'NUMBERS_OUT_OF_RANGE', statusCode: 422 });
-  });
-
+  // ---- Não comprar mais do que o disponível -------------------------------
   it('rejeita quantidade maior que a disponível (INSUFFICIENT_AVAILABILITY)', async () => {
     // total 5, já vendidos 4 => disponível 1; pedindo 2 números.
     const raffle = buildRaffleRow({ total_numbers: 5, sold_numbers: 4 });
-    const { service } = makeSut({ raffle });
+    const { service, purchaseRepository, ticketRepository } = makeSut({ raffle });
 
     await expect(
-      service.purchaseNumbers({ ...input, numbers: [1, 2] })
+      service.purchaseNumbers({ ...input, quantity: 2 })
     ).rejects.toMatchObject({ code: 'INSUFFICIENT_AVAILABILITY', statusCode: 422 });
+
+    // Barra ANTES de sortear ou persistir qualquer coisa.
+    expect(ticketRepository.pickRandomAvailable).not.toHaveBeenCalled();
+    expect(purchaseRepository.create).not.toHaveBeenCalled();
   });
 
-  // ---- Impedir compra duplicada -------------------------------------------
-  it('impede compra de número já vendido (NUMBERS_ALREADY_TAKEN, 409)', async () => {
-    // O repositório de tickets informa que 13 já está vendido.
-    const { service, purchaseRepository } = makeSut({ taken: [13] });
+  // ---- Salvaguarda: sorteio devolveu menos que o pedido -------------------
+  it('aborta sem persistir se o sorteio não alocou tudo (ALLOCATION_FAILED)', async () => {
+    // Pediu 3, mas o sorteio (simulado) só devolveu 1 número.
+    const { service, purchaseRepository } = makeSut({ picked: [1] });
 
     await expect(service.purchaseNumbers(input)).rejects.toMatchObject({
-      code: 'NUMBERS_ALREADY_TAKEN',
+      code: 'ALLOCATION_FAILED',
       statusCode: 409,
-      details: { taken: [13] },
     });
 
-    // Nada é persistido quando há conflito.
     expect(purchaseRepository.create).not.toHaveBeenCalled();
   });
 });

@@ -8,12 +8,12 @@ const { createPurchaseService } = require('../services/purchase.service');
 function createPurchaseController({ purchaseService = createPurchaseService() } = {}) {
   async function create(req, res) {
     const { raffleId } = req.params;
-    const { buyerName, buyerEmail, numbers } = req.body;
+    const { buyerName, buyerEmail, quantity } = req.body;
     const purchase = await purchaseService.purchaseNumbers({
       raffleId,
       buyerName,
       buyerEmail,
-      numbers,
+      quantity,
     });
     // 201 Created + Location apontando para o recurso criado.
     res

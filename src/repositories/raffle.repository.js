@@ -16,7 +16,9 @@ const db = require('../config/database');
 
 const RAFFLE_COLUMNS = `
   id, title, description, unit_price, total_numbers,
-  sold_numbers, draw_date, status, created_at, updated_at
+  sold_numbers, draw_date, status,
+  winner_number, winner_name, winner_email, drawn_at,
+  created_at, updated_at
 `;
 
 function runner(client) {
@@ -103,6 +105,29 @@ async function incrementSoldAndMaybeClose(id, quantity, client) {
   return rows[0];
 }
 
+/**
+ * Registra o ganhador sorteado e encerra a rifa.
+ *
+ * Grava o número premiado e os dados do comprador (denormalizados) e
+ * marca `drawn_at`. O sorteio sempre encerra a rifa (status ENCERRADA),
+ * pois após o sorteio não faz sentido continuar vendendo números.
+ */
+async function setWinner(id, { number, name, email }, client) {
+  const sql = `
+    UPDATE raffles
+    SET winner_number = $2,
+        winner_name   = $3,
+        winner_email  = $4,
+        drawn_at      = NOW(),
+        status        = 'ENCERRADA',
+        updated_at    = NOW()
+    WHERE id = $1
+    RETURNING ${RAFFLE_COLUMNS}
+  `;
+  const { rows } = await runner(client).query(sql, [id, number, name, email]);
+  return rows[0];
+}
+
 async function count({ status }, client) {
   const values = [];
   let where = '';
@@ -123,5 +148,6 @@ module.exports = {
   findById,
   findByIdForUpdate,
   incrementSoldAndMaybeClose,
+  setWinner,
   count,
 };
